@@ -1,0 +1,89 @@
+# KaamSetu - Git Ignore File
+# This file tells Git which files and folders to ignore
+
+# ===========================
+# Dependencies
+# ===========================
+
+# Node modules (both client and server)
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# ===========================
+# Build Outputs
+# ===========================
+
+# React build folder
+client/build/
+
+# ===========================
+# Environment Variables
+# ===========================
+
+# Environment files (contains sensitive data)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+server/.env
+client/.env
+
+# ===========================
+# IDE and Editor Files
+# ===========================
+
+# VS Code
+.vscode/
+
+# IntelliJ IDEA
+.idea/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ===========================
+# OS Generated Files
+# ===========================
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# ===========================
+# Debug Logs
+# ===========================
+
+# npm debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===========================
+# Testing
+# ===========================
+
+# Coverage directory
+coverage/
+
+# ===========================
+# Miscellaneous
+# ===========================
+
+# Temp files
+*.tmp
+*.temp
+
+# dist folder
+dist/
