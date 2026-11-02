@@ -3,7 +3,24 @@
 
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
+const path = require('path');
 const User = require('../models/User');
+
+const profilePhotoDirectory = path.join(__dirname, '..', 'uploads', 'profile-photos');
+
+// Delete only files stored in our profile photo folder.
+const deleteProfilePhotoFile = async (photoPath) => {
+  if (typeof photoPath !== 'string' || !photoPath.startsWith('/uploads/profile-photos/')) {
+    return;
+  }
+
+  try {
+    await fs.promises.unlink(path.join(profilePhotoDirectory, path.basename(photoPath)));
+  } catch (error) {
+    // A missing old file should not prevent updating the profile photo.
+  }
+};
 
 // ===========================
 // Helper: Generate JWT Token
@@ -126,10 +143,13 @@ const login = async (req, res) => {
     }
 
     // Check if account is active
-    if (!user.isActive) {
+    const accountStatus = user.status || (user.isActive ? 'active' : 'suspended');
+    if (!user.isActive || accountStatus !== 'active') {
       return res.status(401).json({
         success: false,
-        message: 'Your account has been deactivated. Please contact admin.'
+        message: accountStatus === 'deleted'
+          ? 'This account has been deleted. Please contact admin.'
+          : 'This account is suspended. Please contact admin.'
       });
     }
 
@@ -238,4 +258,83 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = { register, login, logout, getMe };
+// Save the uploaded profile photo for the signed-in user.
+const uploadProfilePhoto = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please choose a profile photo to upload.'
+    });
+  }
+
+  try {
+    const profilePhoto = `/uploads/profile-photos/${req.file.filename}`;
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { profilePhoto },
+      { new: true }
+    );
+
+    if (!user) {
+      await deleteProfilePhotoFile(profilePhoto);
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      });
+    }
+
+    await deleteProfilePhotoFile(req.user.profilePhoto);
+    return res.status(200).json({
+      success: true,
+      message: 'Profile photo uploaded successfully.',
+      data: { profilePhoto }
+    });
+  } catch (error) {
+    console.error('Upload profile photo error:', error.message);
+    await deleteProfilePhotoFile(`/uploads/profile-photos/${req.file.filename}`);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while uploading profile photo.'
+    });
+  }
+};
+
+// Remove the signed-in user's profile photo.
+const removeProfilePhoto = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { profilePhoto: null },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      });
+    }
+
+    await deleteProfilePhotoFile(req.user.profilePhoto);
+    return res.status(200).json({
+      success: true,
+      message: 'Profile photo removed successfully.',
+      data: { profilePhoto: null }
+    });
+  } catch (error) {
+    console.error('Remove profile photo error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while removing profile photo.'
+    });
+  }
+};
+
+module.exports = {
+  register,
+  login,
+  logout,
+  getMe,
+  uploadProfilePhoto,
+  removeProfilePhoto
+};

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { applicationAPI } from '../../services/api';
+import ReviewForm from '../../components/ReviewForm';
 
 const MyApplications = () => {
   const [applications, setApplications] = useState([]);
@@ -84,6 +85,7 @@ const MyApplications = () => {
                   Cancel
                 </button>
               )}
+              {app.status === 'completed' && app.job?._id && <ReviewForm jobId={app.job._id} />}
             </div>
           ))}
         </div>

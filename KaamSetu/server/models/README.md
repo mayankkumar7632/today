@@ -1,11 +1,7 @@
 /**
- * Models
- * 
- * This folder will contain Mongoose schemas and models.
- * Models define the structure of data stored in MongoDB.
- * 
- * Example: Job.js will define job listing structure
- * Example: User.js will define user (worker/employer) structure
- * 
- * Phase 2: Will add database models
+ * Mongoose schemas and models define the structure of KaamSetu data.
+ *
+ * Notification.js stores both the existing in-app inbox records and per-channel
+ * email/SMS delivery logs. User.js also stores notifyEmail and notifySms
+ * preferences, enabled by default.
  */

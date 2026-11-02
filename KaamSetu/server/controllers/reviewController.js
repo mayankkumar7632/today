@@ -1,185 +1,114 @@
-// KaamSetu - Review Controller
-// This file handles creating and fetching reviews and ratings
-
 const Review = require('../models/Review');
+const Job = require('../models/Job');
 const Application = require('../models/Application');
-const WorkerProfile = require('../models/WorkerProfile');
-const EmployerProfile = require('../models/EmployerProfile');
-const Notification = require('../models/Notification');
+const User = require('../models/User');
+const { notifyUser } = require('../services/notificationService');
 
-// ===========================
-// Create a Review
-// ===========================
-// POST /api/reviews
+const allowedTags = ['On time', 'Good work', 'Paid fairly', 'Rude', 'No show', 'Unsafe'];
+
+const recalculateUserRating = async (userId) => {
+  const reviews = await Review.find({ reviewee: userId, adminHidden: { $ne: true } });
+  const reviewCount = reviews.length;
+  const avgRating = reviewCount
+    ? Math.round((reviews.reduce((sum, review) => sum + review.rating, 0) / reviewCount) * 10) / 10
+    : 0;
+  await User.findByIdAndUpdate(userId, { avgRating, reviewCount });
+};
 
 const createReview = async (req, res) => {
   try {
-    const { jobId, revieweeId, reviewType, ratings, comment } = req.body;
-
-    // Validate required fields
-    if (!jobId || !revieweeId || !reviewType || !ratings || !ratings.overall) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide jobId, revieweeId, reviewType, and ratings.'
-      });
+    const { jobId, rating, tags = [], comment = '' } = req.body;
+    if (!jobId || !Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5) {
+      return res.status(400).json({ success: false, message: 'A job and rating from 1 to 5 are required.' });
+    }
+    if (comment.length > 500) return res.status(400).json({ success: false, message: 'Comment cannot exceed 500 characters.' });
+    if (!Array.isArray(tags) || tags.some(tag => !allowedTags.includes(tag))) {
+      return res.status(400).json({ success: false, message: 'One or more review tags are invalid.' });
     }
 
-    // Validate review type
-    if (!['employer_to_worker', 'worker_to_employer'].includes(reviewType)) {
-      return res.status(400).json({
-        success: false,
-        message: 'reviewType must be employer_to_worker or worker_to_employer.'
-      });
-    }
+    const job = await Job.findById(jobId);
+    if (!job) return res.status(404).json({ success: false, message: 'Job not found.' });
+    if (job.status !== 'completed') return res.status(400).json({ success: false, message: 'You can review only a completed job.' });
 
-    // Verify the reviewer was involved in this completed job
-    const application = await Application.findOne({
-      job: jobId,
-      status: 'completed',
-      $or: [
-        { worker: req.user.id },
-        { employer: req.user.id }
-      ]
-    });
-
-    if (!application) {
-      return res.status(403).json({
-        success: false,
-        message: 'You can only review after a completed job you were involved in.'
-      });
-    }
-
-    // Check for duplicate review
-    const existingReview = await Review.findOne({
-      job: jobId,
-      reviewer: req.user.id
-    });
-
-    if (existingReview) {
-      return res.status(409).json({
-        success: false,
-        message: 'You have already reviewed for this job.'
-      });
-    }
-
-    // Create the review
-    const review = await Review.create({
-      job: jobId,
-      reviewee: revieweeId,
-      reviewer: req.user.id,
-      reviewType,
-      ratings: {
-        overall: ratings.overall,
-        skill: ratings.skill,
-        punctuality: ratings.punctuality,
-        workQuality: ratings.workQuality,
-        payment: ratings.payment,
-        behaviour: ratings.behaviour
-      },
-      comment
-    });
-
-    // Update average rating for the reviewee
-    const allReviews = await Review.find({ reviewee: revieweeId });
-    const totalRating = allReviews.reduce((sum, r) => sum + r.ratings.overall, 0);
-    const avgRating = totalRating / allReviews.length;
-
-    // Update worker or employer profile rating
-    if (reviewType === 'employer_to_worker') {
-      await WorkerProfile.findOneAndUpdate(
-        { user: revieweeId },
-        { averageRating: Math.round(avgRating * 10) / 10, totalReviews: allReviews.length }
-      );
+    let reviewee;
+    if (req.user.role === 'employer') {
+      if (job.employer.toString() !== req.user.id) return res.status(403).json({ success: false, message: 'You did not own this job.' });
+      reviewee = req.body.revieweeId;
+      if (!reviewee) return res.status(400).json({ success: false, message: 'A worker is required when an employer leaves a review.' });
+      const participation = await Application.findOne({ job: jobId, worker: reviewee, status: { $in: ['accepted', 'completed'] } });
+      if (!participation) return res.status(403).json({ success: false, message: 'This worker did not participate in the job.' });
+    } else if (req.user.role === 'worker') {
+      const participation = await Application.findOne({ job: jobId, worker: req.user.id, status: { $in: ['accepted', 'completed'] } });
+      if (!participation) return res.status(403).json({ success: false, message: 'You did not participate in this job.' });
+      reviewee = job.employer;
     } else {
-      await EmployerProfile.findOneAndUpdate(
-        { user: revieweeId },
-        { averageRating: Math.round(avgRating * 10) / 10, totalReviews: allReviews.length }
-      );
+      return res.status(403).json({ success: false, message: 'Admins cannot submit job reviews.' });
     }
 
-    // Send notification to reviewee
-    await Notification.create({
-      user: revieweeId,
-      type: 'new_review',
-      title: 'New Review Received',
-      message: `You received a new review with rating ${ratings.overall}/5`,
-      relatedJob: jobId,
-      relatedUser: req.user.id
-    });
+    const existing = await Review.findOne({ job: jobId, reviewer: req.user.id });
+    if (existing) return res.status(409).json({ success: false, message: 'You have already reviewed this job.' });
 
-    res.status(201).json({
-      success: true,
-      message: 'Review submitted successfully',
-      data: review
+    const revieweeUser = await User.findById(reviewee);
+    if (!revieweeUser || revieweeUser.role === 'admin') return res.status(404).json({ success: false, message: 'Reviewee not found.' });
+    const reviewerRole = req.user.role;
+    const revieweeRole = reviewerRole === 'employer' ? 'worker' : 'employer';
+    if (revieweeUser.role !== revieweeRole) return res.status(400).json({ success: false, message: 'Reviewee role does not match the job participant.' });
+
+    const review = await Review.create({
+      job: jobId, reviewer: req.user.id, reviewerRole, reviewee, revieweeRole,
+      rating: Number(rating), tags, comment, isNegative: Number(rating) <= 2
     });
+    await recalculateUserRating(reviewee);
+    void notifyUser(reviewee, 'review_received', { reviewerName: req.user.name, rating: review.rating, jobTitle: job.title, title: 'New review received', link: '/notifications' });
+
+    res.status(201).json({ success: true, message: 'Review submitted successfully', data: review });
   } catch (error) {
-    console.error('Create review error:', error.message);
-    if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: 'You have already reviewed for this job.'
-      });
-    }
-    res.status(500).json({
-      success: false,
-      message: 'Server error while creating review.'
-    });
+    if (error.code === 11000) return res.status(409).json({ success: false, message: 'You have already reviewed this job.' });
+    console.error('Create review error:', error.stack || error.message);
+    res.status(500).json({ success: false, message: `Server error while creating review: ${error.message}` });
   }
 };
-
-// ===========================
-// Get Reviews for a User
-// ===========================
-// GET /api/reviews/user/:userId
 
 const getUserReviews = async (req, res) => {
   try {
-    const { userId } = req.params;
-
-    const reviews = await Review.find({ reviewee: userId })
-      .populate('reviewer', 'name email')
-      .populate('job', 'title dailyWage')
-      .sort({ createdAt: -1 })
-      .limit(20);
-
-    res.status(200).json({
-      success: true,
-      count: reviews.length,
-      data: reviews
-    });
+    const reviews = await Review.find({ reviewee: req.params.userId, adminHidden: { $ne: true } })
+      .populate('reviewer', 'name profilePhoto role').populate('job', 'title')
+      .sort({ createdAt: -1 });
+    const ratingTotal = reviews.reduce((sum, review) => sum + review.rating, 0);
+    res.status(200).json({ success: true, averageRating: reviews.length ? Math.round((ratingTotal / reviews.length) * 10) / 10 : 0,
+      totalReviews: reviews.length, count: reviews.length, data: reviews });
   } catch (error) {
-    console.error('Get user reviews error:', error.message);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching reviews.'
-    });
+    res.status(500).json({ success: false, message: 'Server error while fetching reviews.' });
   }
 };
 
-// ===========================
-// Get Reviews I Gave
-// ===========================
-// GET /api/reviews/my-reviews
+const getJobReviews = async (req, res) => {
+  try {
+    const reviews = await Review.find({ job: req.params.jobId, adminHidden: { $ne: true } })
+      .populate('reviewer reviewee', 'name profilePhoto role').sort({ createdAt: -1 });
+    res.status(200).json({ success: true, count: reviews.length, data: reviews });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error while fetching job reviews.' });
+  }
+};
+
+const reportReview = async (req, res) => {
+  try {
+    const review = await Review.findById(req.params.id);
+    if (!review) return res.status(404).json({ success: false, message: 'Review not found.' });
+    if (review.reviewee.toString() !== req.user.id) return res.status(403).json({ success: false, message: 'Only the reviewed person can report this review.' });
+    review.reported = true;
+    await review.save();
+    res.status(200).json({ success: true, message: 'Review reported to admin.', data: review });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error while reporting review.' });
+  }
+};
 
 const getMyReviews = async (req, res) => {
-  try {
-    const reviews = await Review.find({ reviewer: req.user.id })
-      .populate('reviewee', 'name email')
-      .populate('job', 'title')
-      .sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: reviews.length,
-      data: reviews
-    });
-  } catch (error) {
-    console.error('Get my reviews error:', error.message);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching your reviews.'
-    });
-  }
+  const reviews = await Review.find({ reviewer: req.user.id })
+    .populate('reviewee', 'name profilePhoto').populate('job', 'title').sort({ createdAt: -1 });
+  res.status(200).json({ success: true, count: reviews.length, data: reviews });
 };
 
-module.exports = { createReview, getUserReviews, getMyReviews };
+module.exports = { createReview, getUserReviews, getJobReviews, reportReview, getMyReviews, recalculateUserRating };

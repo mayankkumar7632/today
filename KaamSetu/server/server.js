@@ -24,8 +24,12 @@ const reviewRoutes = require('./routes/reviewRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const complaintRoutes = require('./routes/complaintRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const adminReviewRoutes = require('./routes/adminReviewRoutes');
 const recommendationRoutes = require('./routes/recommendationRoutes');
 const locationRoutes = require('./routes/locationRoutes');
+const chatbotRoutes = require('./routes/chatbotRoutes');
+const { startJobReminderScheduler } = require('./services/reminderScheduler');
+const { verifyEmailSetup } = require('./services/emailService');
 
 // Create an Express application
 const app = express();
@@ -49,6 +53,20 @@ app.use(express.json());
 // Parse URL-encoded request bodies
 // This allows the server to read form data
 app.use(express.urlencoded({ extended: true }));
+
+app.use((error, req, res, next) => {
+  if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
+    console.error('Invalid JSON request body:', error.message);
+    return res.status(400).json({
+      success: false,
+      message: 'Request body contains invalid JSON.'
+    });
+  }
+  return next(error);
+});
+
+// Serve uploaded profile photos.
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ===========================
 // Basic Routes
@@ -125,6 +143,10 @@ app.use('/api/notifications', notificationRoutes);
 // Complaint routes
 app.use('/api/complaints', complaintRoutes);
 
+// Admin review/moderation routes. Mount before the legacy admin routes so
+// the new reason-required DELETE /api/admin/users/:id is used.
+app.use('/api/admin', adminReviewRoutes);
+
 // Admin routes
 app.use('/api/admin', adminRoutes);
 
@@ -133,6 +155,10 @@ app.use('/api/recommendations', recommendationRoutes);
 
 // Location routes
 app.use('/api/location', locationRoutes);
+
+// Chatbot routes
+app.use('/api/chatbot', chatbotRoutes);
+app.use('/api/assistant', chatbotRoutes);
 
 // User routes - handles all /api/users requests
 app.use('/api/users', userRoutes);
@@ -167,6 +193,10 @@ const startServer = async () => {
   try {
     // First, connect to MongoDB
     await connectDB();
+    startJobReminderScheduler();
+
+    // Verify email settings without waiting for Gmail before startup continues.
+    void verifyEmailSetup();
 
     // Then, start the Express server
     app.listen(PORT, () => {

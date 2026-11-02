@@ -5,6 +5,10 @@ const Application = require('../models/Application');
 const Job = require('../models/Job');
 const WorkerProfile = require('../models/WorkerProfile');
 const Notification = require('../models/Notification');
+const User = require('../models/User');
+const { notifyUser } = require('../services/notificationService');
+const { sendEmail, emailTemplate } = require('../services/emailService');
+const { applyForJobByWorker, ApplicationError } = require('../services/applicationService');
 
 // ===========================
 // Apply for a Job
@@ -14,55 +18,7 @@ const Notification = require('../models/Notification');
 const applyForJob = async (req, res) => {
   try {
     const { jobId, message } = req.body;
-
-    if (!jobId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a job ID.'
-      });
-    }
-
-    // Check if job exists and is open
-    const job = await Job.findById(jobId);
-    if (!job) {
-      return res.status(404).json({
-        success: false,
-        message: 'Job not found.'
-      });
-    }
-
-    if (job.status !== 'open') {
-      return res.status(400).json({
-        success: false,
-        message: 'This job is no longer accepting applications.'
-      });
-    }
-
-    // Check if worker already applied
-    const existingApplication = await Application.findOne({
-      job: jobId,
-      worker: req.user.id
-    });
-
-    if (existingApplication) {
-      return res.status(409).json({
-        success: false,
-        message: 'You have already applied for this job.'
-      });
-    }
-
-    // Create application
-    const application = await Application.create({
-      job: jobId,
-      worker: req.user.id,
-      employer: job.employer,
-      message: message || ''
-    });
-
-    await application.populate([
-      { path: 'job', select: 'title dailyWage location' },
-      { path: 'worker', select: 'name email' }
-    ]);
+    const application = await applyForJobByWorker({ jobId, workerId: req.user.id, message });
 
     res.status(201).json({
       success: true,
@@ -71,10 +27,10 @@ const applyForJob = async (req, res) => {
     });
   } catch (error) {
     console.error('Apply for job error:', error.message);
-    if (error.code === 11000) {
-      return res.status(409).json({
+    if (error instanceof ApplicationError) {
+      return res.status(error.status).json({
         success: false,
-        message: 'You have already applied for this job.'
+        message: error.message
       });
     }
     res.status(500).json({
@@ -103,7 +59,11 @@ const getWorkerApplications = async (req, res) => {
         path: 'job',
         select: 'title dailyWage location jobDate status requiredSkills'
       })
-      .populate('employer', 'name email phone')
+      .populate({
+        path: 'employer',
+        select: 'name email phone status isActive',
+        match: { $or: [{ status: 'active' }, { status: { $exists: false } }], isActive: { $ne: false } }
+      })
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -145,14 +105,17 @@ const getEmployerApplications = async (req, res) => {
       })
       .populate({
         path: 'worker',
-        select: 'name email phone'
+        select: 'name email phone status isActive',
+        match: { $or: [{ status: 'active' }, { status: { $exists: false } }], isActive: { $ne: false } }
       })
       .sort({ createdAt: -1 });
+      
+    const activeApplications = applications.filter(application => application.worker);
 
     res.status(200).json({
       success: true,
-      count: applications.length,
-      data: applications
+      count: activeApplications.length,
+      data: activeApplications
     });
   } catch (error) {
     console.error('Get employer applications error:', error.message);
@@ -205,6 +168,32 @@ const acceptApplication = async (req, res) => {
       $inc: { workersAccepted: 1 }
     });
 
+    let job;
+    try {
+      job = await Job.findById(application.job);
+    } catch (notificationContextError) {
+      console.error('Could not load accepted job notification details:', notificationContextError.message);
+    }
+    void notifyUser(application.worker, 'application_accepted', {
+      jobTitle: job && job.title,
+      jobDate: job && job.jobDate,
+      dailyWage: job && job.dailyWage,
+      location: job && (job.location.city || job.location.address),
+      employerPhone: req.user.phone,
+      title: 'Application accepted',
+      link: '/worker/applications'
+    });
+
+    const worker = await User.findById(application.worker);
+    const employer = await User.findById(application.employer);
+    const jobTitle = job ? job.title : 'the job';
+    const workerText = `Your application for ${jobTitle} was accepted. Employer: ${employer ? employer.name : 'the employer'}. Phone: ${employer ? employer.phone : 'Not available'}.`;
+    const employerText = `${worker ? worker.name : 'The worker'} was accepted for ${jobTitle}. Worker phone: ${worker ? worker.phone : 'Not available'}.`;
+    void sendEmail(worker && worker.email, 'Application accepted', workerText,
+      emailTemplate('Application accepted', `<p>Your application for <strong>${jobTitle}</strong> was accepted.</p><p>Employer: ${employer ? employer.name : 'the employer'}<br>Phone: ${employer ? employer.phone : 'Not available'}</p>`)).catch((error) => console.error('Application acceptance email failed for worker:', error.message));
+    void sendEmail(employer && employer.email, 'Worker accepted', employerText,
+      emailTemplate('Worker accepted', `<p><strong>${worker ? worker.name : 'The worker'}</strong> was accepted for <strong>${jobTitle}</strong>.</p><p>Worker phone: ${worker ? worker.phone : 'Not available'}</p>`)).catch((error) => console.error('Application acceptance email failed for employer:', error.message));
+
     res.status(200).json({
       success: true,
       message: 'Application accepted successfully',
@@ -252,6 +241,27 @@ const rejectApplication = async (req, res) => {
     application.status = 'rejected';
     application.respondedAt = new Date();
     await application.save();
+
+    let job;
+    try {
+      job = await Job.findById(application.job);
+    } catch (notificationContextError) {
+      console.error('Could not load rejected job notification details:', notificationContextError.message);
+    }
+    void notifyUser(application.worker, 'application_rejected', {
+      jobTitle: job && job.title,
+      jobDate: job && job.jobDate,
+      dailyWage: job && job.dailyWage,
+      location: job && (job.location.city || job.location.address),
+      title: 'Application update',
+      link: '/worker/applications'
+    });
+
+    const worker = await User.findById(application.worker);
+    const jobTitle = job ? job.title : 'the job';
+    const text = `We are sorry, but your application for ${jobTitle} was not accepted. Please keep applying for other jobs on KaamSetu.`;
+    void sendEmail(worker && worker.email, 'Application update', text,
+      emailTemplate('Application update', `<p>We are sorry, but your application for <strong>${jobTitle}</strong> was not accepted.</p><p>Please keep applying for other jobs on KaamSetu.</p>`)).catch((error) => console.error('Application rejection email failed for worker:', error.message));
 
     res.status(200).json({
       success: true,
@@ -301,11 +311,40 @@ const completeApplication = async (req, res) => {
     application.completedAt = new Date();
     await application.save();
 
+    // Mark the parent Job completed only after no accepted application remains.
+    // Workers can review a job only after the job itself has completed.
+    const remainingAcceptedApplications = await Application.countDocuments({
+      job: application.job,
+      status: 'accepted'
+    });
+    if (remainingAcceptedApplications === 0) {
+      await Job.findByIdAndUpdate(application.job, { status: 'completed' });
+    }
+
     // Update worker's completed jobs count
     await WorkerProfile.findOneAndUpdate(
       { user: application.worker },
       { $inc: { completedJobs: 1 } }
     );
+
+    const [worker, employer, job] = await Promise.all([
+      User.findById(application.worker),
+      User.findById(application.employer),
+      Job.findById(application.job)
+    ]);
+    const jobTitle = job ? job.title : 'the job';
+    const workerText = `${jobTitle} is complete. Please take a moment to leave a rating for the employer.`;
+    const employerText = `${jobTitle} is complete. Please take a moment to leave a rating for the worker.`;
+    void sendEmail(worker && worker.email, 'Job completed - leave a rating', workerText,
+      emailTemplate('Job completed', `<p>${jobTitle} is complete. Please take a moment to leave a rating for your employer.</p>`)).catch((error) => console.error('Job completion email failed for worker:', error.message));
+    void notifyUser(application.worker, 'job_completed', {
+      title: 'Job completed',
+      message: `${jobTitle} is complete. Leave a review for your employer.`,
+      link: `/worker/jobs/${application.job}`,
+      jobTitle
+    });
+    void sendEmail(employer && employer.email, 'Job completed - leave a rating', employerText,
+      emailTemplate('Job completed', `<p>${jobTitle} is complete. Please take a moment to leave a rating for the worker.</p>`)).catch((error) => console.error('Job completion email failed for employer:', error.message));
 
     res.status(200).json({
       success: true,

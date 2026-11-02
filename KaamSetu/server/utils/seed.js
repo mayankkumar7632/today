@@ -9,6 +9,7 @@ const User = require('../models/User');
 const WorkerProfile = require('../models/WorkerProfile');
 const EmployerProfile = require('../models/EmployerProfile');
 const Job = require('../models/Job');
+const { normalizeGeoLocation } = require('./geoLocation');
 
 const seedData = async () => {
   try {
@@ -50,12 +51,11 @@ const seedData = async () => {
       businessType: 'Construction',
       phone: '9876543210',
       description: 'Building construction and renovation company',
-      location: {
-        type: 'Point',
+      location: normalizeGeoLocation({
         coordinates: [77.2090, 28.6139],
         address: 'Connaught Place',
         city: 'Delhi'
-      }
+      })
     });
     console.log('Employer 1 created: rajesh@example.com / password123');
 
@@ -74,12 +74,11 @@ const seedData = async () => {
       businessType: 'Event Management',
       phone: '9876543211',
       description: 'Wedding and event decoration services',
-      location: {
-        type: 'Point',
+      location: normalizeGeoLocation({
         coordinates: [77.1025, 28.7041],
         address: 'Rohini',
         city: 'Delhi'
-      }
+      })
     });
     console.log('Employer 2 created: priya@example.com / password123');
 
@@ -110,12 +109,11 @@ const seedData = async () => {
         expectedWage: w.wage,
         availability: 'Monday to Saturday, 8 AM to 6 PM',
         bio: `Experienced ${w.skills[0].toLowerCase()} with ${w.exp} years of work history`,
-        location: {
-          type: 'Point',
+        location: normalizeGeoLocation({
           coordinates: [77.1 + (Math.random() * 0.2), 28.6 + (Math.random() * 0.2)],
           address: 'Local Area',
           city: w.city
-        }
+        })
       });
       console.log(`Worker created: worker${i + 1}@example.com / password123`);
     }
@@ -129,7 +127,7 @@ const seedData = async () => {
         requiredSkills: ['Painting'],
         requiredExperience: 2,
         dailyWage: 700,
-        location: { type: 'Point', coordinates: [77.22, 28.63], address: 'Lajpat Nagar', city: 'Delhi' },
+        location: normalizeGeoLocation({ coordinates: [77.22, 28.63], address: 'Lajpat Nagar', city: 'Delhi' }),
         jobDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         workersRequired: 2
       },
@@ -140,7 +138,7 @@ const seedData = async () => {
         requiredSkills: ['Decoration', 'Loading'],
         requiredExperience: 0,
         dailyWage: 600,
-        location: { type: 'Point', coordinates: [77.11, 28.71], address: 'Rohini Sector 3', city: 'Delhi' },
+        location: normalizeGeoLocation({ coordinates: [77.11, 28.71], address: 'Rohini Sector 3', city: 'Delhi' }),
         jobDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
         workersRequired: 4
       },
@@ -151,7 +149,7 @@ const seedData = async () => {
         requiredSkills: ['Plumbing', 'Pipe Fitting'],
         requiredExperience: 3,
         dailyWage: 900,
-        location: { type: 'Point', coordinates: [77.19, 28.58], address: 'Saket', city: 'Delhi' },
+        location: normalizeGeoLocation({ coordinates: [77.19, 28.58], address: 'Saket', city: 'Delhi' }),
         jobDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
         workersRequired: 1
       }

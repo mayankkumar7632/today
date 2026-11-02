@@ -2,6 +2,27 @@
 // This file handles filing and managing complaints/reports
 
 const Complaint = require('../models/Complaint');
+const User = require('../models/User');
+const { notifyUser } = require('../services/notificationService');
+
+const notifyComplaintAdmins = async (complaint, reporterName) => {
+  try {
+    const admins = await User.find({ role: 'admin' }).select('_id').lean();
+    const data = {
+      recipientRole: 'admin',
+      reporterName,
+      ticketNumber: complaint._id.toString().slice(-8),
+      reason: complaint.reason,
+      title: 'New complaint filed',
+      link: '/admin/complaints'
+    };
+    for (const admin of admins) {
+      void notifyUser(admin._id, 'complaint_filed', data);
+    }
+  } catch (error) {
+    console.error('Complaint admin notification lookup failed:', error.message);
+  }
+};
 
 // ===========================
 // File a Complaint
@@ -26,6 +47,11 @@ const fileComplaint = async (req, res) => {
       reason,
       description: description || ''
     });
+
+    // Send the filer confirmation and alert admins without holding up the response.
+    const ticketNumber = complaint._id.toString().slice(-8);
+    void notifyUser(req.user.id, 'complaint_filed', { ticketNumber, title: `Complaint filed: ${ticketNumber}`, link: '/notifications' });
+    void notifyComplaintAdmins(complaint, req.user.name);
 
     res.status(201).json({
       success: true,
@@ -133,6 +159,14 @@ const updateComplaint = async (req, res) => {
         message: 'Complaint not found.'
       });
     }
+
+    void notifyUser(complaint.reportedBy, 'complaint_status_updated', {
+      ticketNumber: complaint._id.toString().slice(-8),
+      status: complaint.status,
+      adminNotes: complaint.adminNotes,
+      title: 'Complaint status updated',
+      link: '/notifications'
+    });
 
     res.status(200).json({
       success: true,

@@ -5,58 +5,17 @@ const mongoose = require('mongoose');
 
 const reviewSchema = new mongoose.Schema(
   {
-    // The job this review is for
-    job: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Job',
-      required: true
-    },
-
-    // The person being reviewed
-    reviewee: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
-    },
-
-    // The person giving the review
-    reviewer: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
-    },
-
-    // Type of review
-    // "employer_to_worker" or "worker_to_employer"
-    reviewType: {
-      type: String,
-      enum: ['employer_to_worker', 'worker_to_employer'],
-      required: true
-    },
-
-    // Category ratings (1 to 5)
-    ratings: {
-      overall: {
-        type: Number,
-        required: true,
-        min: 1,
-        max: 5
-      },
-      // Employer rating categories for reviewing workers
-      skill: { type: Number, min: 1, max: 5 },
-      punctuality: { type: Number, min: 1, max: 5 },
-      workQuality: { type: Number, min: 1, max: 5 },
-      // Worker rating categories for reviewing employers
-      payment: { type: Number, min: 1, max: 5 },
-      behaviour: { type: Number, min: 1, max: 5 }
-    },
-
-    // Written review text
-    comment: {
-      type: String,
-      trim: true,
-      maxlength: 1000
-    }
+    job: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', required: true },
+    reviewer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    reviewerRole: { type: String, enum: ['worker', 'employer'], required: true },
+    reviewee: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    revieweeRole: { type: String, enum: ['worker', 'employer'], required: true },
+    rating: { type: Number, required: true, min: 1, max: 5 },
+    tags: [{ type: String, trim: true }],
+    comment: { type: String, trim: true, maxlength: 500, default: '' },
+    isNegative: { type: Boolean, default: false },
+    reported: { type: Boolean, default: false },
+    adminHidden: { type: Boolean, default: false }
   },
   {
     timestamps: true
@@ -68,5 +27,10 @@ reviewSchema.index({ job: 1, reviewer: 1 }, { unique: true });
 
 // Index for fetching reviews of a user
 reviewSchema.index({ reviewee: 1, createdAt: -1 });
+
+// Automatically compute this moderation flag for every create/update.
+reviewSchema.pre('validate', function setNegativeFlag() {
+  this.isNegative = Number(this.rating) <= 2;
+});
 
 module.exports = mongoose.model('Review', reviewSchema);

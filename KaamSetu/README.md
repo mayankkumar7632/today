@@ -45,7 +45,38 @@ Daily-wage workers face uncertainty every morning about finding work. They often
 - Two-way rating and review system
 - Notification system
 - Complaint/report system
+- Rule-based chatbot for common questions and live job/application information
+- Profile photo upload and display for worker and employer accounts (JPG, PNG, or WEBP, up to 2 MB)
 - Mobile responsive design
+
+### Chatbot
+Signed-in users can ask the AI-powered KaamSetu Assistant about jobs, applications, verification, ratings, and complaints. The protected `POST /api/chatbot` endpoint accepts a message and optional conversation history. The server supplies the latest five open jobs from MongoDB as context to Google's Gemini API, retries once after a transient network error or HTTP 503, and falls back to the existing keyword-based replies if the AI service is unavailable. The assistant is instructed to stay within KaamSetu topics and not invent jobs or wages.
+
+To enable AI replies, create a Gemini API key in [Google AI Studio](https://aistudio.google.com/app/apikey) and copy the settings from `server/.env.example` into `server/.env` (preserve any existing MongoDB and JWT values). Set `AI_API_KEY` to your key and `AI_MODEL` to a Gemini model available to your account (the tested default is `gemini-3.1-flash-lite`; friendly names such as `Gemini 2.5 Flash` are normalized). Keep the key private: `server/.env` is ignored by Git and the key is only used by the backend. Without a valid key, the rule-based fallback continues to work.
+
+The chat widget also supports microphone input and optional spoken replies in English (India), Hindi, or Tamil, using the browser's built-in Web Speech APIs. Browser support and microphone permission are required.
+
+## Email Notifications
+
+1. Enable 2-Step Verification on the Gmail account that will send KaamSetu emails.
+2. Open Google's App Password page (`https://myaccount.google.com/apppasswords`), create an app password, and copy the 16-character password.
+3. Add these values to `server/.env`:
+
+```env
+EMAIL_USER=your-gmail-address@gmail.com
+EMAIL_PASS=your-16-character-app-password
+```
+
+Use a Gmail App Password instead of the normal Gmail password because Google blocks direct sign-in by many apps. Restart the server; a successful connection prints `Email service ready`.
+
+In development, an authenticated user can send a test email to their own registered address:
+
+```text
+POST /api/notifications/test-email
+Authorization: Bearer <JWT_TOKEN>
+```
+
+The endpoint is disabled when `NODE_ENV=production`.
 
 ## Technology Stack
 
@@ -184,7 +215,35 @@ Create `server/.env` file:
 PORT=5000
 MONGO_URI=mongodb://127.0.0.1:27017/kaamsetu
 JWT_SECRET=your-secret-key-here
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMS_API_KEY=
+NOTIFY_MODE=mock
 ```
+
+### Email and SMS Notifications
+
+The backend records one `Notification` document for each email/SMS channel attempt (`sent`, `failed`, or `skipped`). User notification preferences default to enabled. For a no-cost demo, leave `NOTIFY_MODE=mock`; both messages are printed in the backend console and logged as skipped. To send email, configure all four SMTP variables. `SMS_API_KEY` is the credential slot for the SMS provider adapter; the provider call belongs in `server/services/notificationService.js` (`sendSms`). Until that adapter is implemented, an API key without mock mode is accurately logged as failed rather than as sent.
+
+Install the backend notification dependencies from the `server` folder:
+
+```bash
+npm install nodemailer node-cron
+```
+
+Send a test notification to the authenticated user's enabled channels:
+
+```http
+GET /api/notifications/test
+Authorization: Bearer <JWT>
+```
+
+The endpoint returns immediately; inspect the server console in mock mode and the `notifications` collection for the per-channel delivery log.
+For an authenticated API view limited to the current user's delivery records, use `GET /api/notifications/logs`.
+
+The notification triggers are in the application controller (worker applies; employer accepts/rejects), complaint controller (complaint creation/admin status update), job controller (new skill-and-city matches), and `server/services/reminderScheduler.js` (accepted workers and their employer for jobs scheduled tomorrow). The scheduler runs at 6 PM in the server's local timezone.
 
 ## Installation & Setup
 
@@ -328,6 +387,8 @@ db.users.insertOne({
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | /api/notifications | Get notifications |
+| GET | /api/notifications/test | Send test email/SMS to current user |
+| GET | /api/notifications/logs | Get current user's email/SMS delivery logs |
 | PUT | /api/notifications/:id/read | Mark as read |
 | PUT | /api/notifications/read-all | Mark all as read |
 

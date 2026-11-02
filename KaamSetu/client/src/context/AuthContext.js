@@ -71,6 +71,11 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  // Update the signed-in user's details after a profile save.
+  const updateUser = (userUpdates) => {
+    setUser((currentUser) => currentUser ? { ...currentUser, ...userUpdates } : currentUser);
+  };
+
   // Clear error
   const clearError = () => setError(null);
 
@@ -82,6 +87,7 @@ export const AuthProvider = ({ children }) => {
     register,
     login,
     logout,
+    updateUser,
     clearError,
     loadUser
   };

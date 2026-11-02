@@ -1,16 +1,22 @@
 // KaamSetu - Navbar Component
 // Responsive navigation bar with mobile support
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { notificationAPI } from '../services/api';
+import { getPhotoUrl } from '../services/api';
+import NotificationBell from './NotificationBell';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [unreadCount] = useState(0);
+  const [avatarError, setAvatarError] = useState(false);
+  const photoUrl = user ? getPhotoUrl(user.profilePhoto) : null;
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [photoUrl]);
 
   const handleLogout = () => {
     logout();
@@ -75,18 +81,24 @@ const Navbar = () => {
                   <Link to="/admin/users" onClick={closeMenu}>Users</Link>
                   <Link to="/admin/jobs" onClick={closeMenu}>Jobs</Link>
                   <Link to="/admin/verification" onClick={closeMenu}>Verification</Link>
+                  <Link to="/admin/reviews" onClick={closeMenu}>Review Moderation</Link>
                 </>
               )}
 
-              <Link to="/notifications" onClick={closeMenu}>
-                Notifications {unreadCount > 0 && <span className="badge">{unreadCount}</span>}
-              </Link>
+              <NotificationBell />
 
               <Link to={
                 user.role === 'worker' ? '/worker/profile' :
                 user.role === 'employer' ? '/employer/profile' : '/admin/dashboard'
               } onClick={closeMenu}>
-                {user.name}
+                <span className="navbar-user">
+                  <span className="navbar-avatar">
+                    {photoUrl && !avatarError
+                      ? <img src={photoUrl} alt="" onError={() => setAvatarError(true)} />
+                      : (user.name || '?').charAt(0).toUpperCase()}
+                  </span>
+                  {user.name}
+                </span>
               </Link>
 
               <button className="btn-logout" onClick={handleLogout}>

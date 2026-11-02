@@ -2,11 +2,21 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { jobAPI } from '../../services/api';
+import { jobAPI, locationAPI } from '../../services/api';
+
+const getLocalToday = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const PostJob = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationCoordinates, setLocationCoordinates] = useState([0, 0]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -25,6 +35,38 @@ const PostJob = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation || !window.isSecureContext) {
+      alert('Location access requires HTTPS or localhost. Please open the site on a secure URL and allow location permission.');
+      return;
+    }
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const longitude = position.coords.longitude;
+      const latitude = position.coords.latitude;
+      // GeoJSON uses [longitude, latitude].
+      setLocationCoordinates([longitude, latitude]);
+      try {
+        const result = await locationAPI.reverse(latitude, longitude);
+        if (result.success) {
+          setFormData((current) => ({
+            ...current,
+            city: current.city || result.city || '',
+            address: current.address || result.address || ''
+          }));
+        }
+      } catch (error) {
+        alert(`Location set, but address details could not be loaded: ${error.message}`);
+      } finally {
+        setLocationLoading(false);
+      }
+    }, (error) => {
+      const messages = { 1: 'Location permission was denied.', 2: 'Your location is currently unavailable.', 3: 'Location request timed out.' };
+      alert(messages[error.code] || 'Could not get your location.');
+      setLocationLoading(false);
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -40,7 +82,7 @@ const PostJob = () => {
         workingHours: { start: formData.startHour, end: formData.endHour },
         location: {
           type: 'Point',
-          coordinates: [77.1025, 28.6139], // Default Delhi coordinates
+          coordinates: locationCoordinates,
           address: formData.address,
           city: formData.city
         }
@@ -124,6 +166,7 @@ const PostJob = () => {
               value={formData.jobDate}
               onChange={handleChange}
               required
+              min={getLocalToday()}
             />
           </div>
           <div className="form-group">
@@ -169,6 +212,9 @@ const PostJob = () => {
             />
           </div>
         </div>
+        <button type="button" className="btn btn-secondary location-button" onClick={useCurrentLocation} disabled={locationLoading || loading}>
+          {locationLoading ? 'Getting location...' : 'Use my current location'}
+        </button>
         <button type="submit" className="btn btn-primary" disabled={loading}>
           {loading ? 'Posting...' : 'Post Job'}
         </button>

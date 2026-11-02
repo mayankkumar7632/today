@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { applicationAPI } from '../../services/api';
+import UserReviews from '../../components/UserReviews';
+import ReviewForm from '../../components/ReviewForm';
 
 const EmployerApplications = () => {
   const [searchParams] = useSearchParams();
@@ -95,6 +97,7 @@ const EmployerApplications = () => {
               <p><strong>Phone:</strong> {app.worker?.phone}</p>
               <p><strong>Applied:</strong> {new Date(app.createdAt).toLocaleDateString()}</p>
               {app.message && <p><strong>Message:</strong> {app.message}</p>}
+              {app.worker?._id && <UserReviews userId={app.worker._id} />}
 
               {app.status === 'pending' && (
                 <div className="job-actions">
@@ -111,6 +114,7 @@ const EmployerApplications = () => {
                   Mark Completed
                 </button>
               )}
+              {app.status === 'completed' && app.job?._id && app.worker?._id && <ReviewForm jobId={app.job._id} revieweeId={app.worker._id} />}
             </div>
           ))}
         </div>

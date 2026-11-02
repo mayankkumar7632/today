@@ -3,12 +3,26 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { applicationAPI, recommendationAPI } from '../../services/api';
+import { applicationAPI, jobAPI, workerAPI } from '../../services/api';
+import MatchBadge from '../../components/MatchBadge';
+
+const isProfileIncomplete = (profileData) => {
+  const skills = Array.isArray(profileData?.skills) ? profileData.skills : [];
+  const expectedWage = Number(profileData?.expectedWage) || 0;
+  const location = profileData?.location;
+  const hasArea = Boolean(
+    (location && location.city) ||
+    (Array.isArray(location?.coordinates) && location.coordinates.length === 2 &&
+      location.coordinates.some((c) => Number(c) !== 0))
+  );
+  return skills.length === 0 || !hasArea || expectedWage <= 0;
+};
 
 const WorkerDashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState({ applications: 0, pending: 0, accepted: 0 });
   const [recommendations, setRecommendations] = useState([]);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -17,9 +31,10 @@ const WorkerDashboard = () => {
 
   const loadDashboardData = async () => {
     try {
-      const [appRes, recRes] = await Promise.all([
+      const [appRes, recRes, profileRes] = await Promise.all([
         applicationAPI.getWorkerApplications(),
-        recommendationAPI.getJobRecommendations().catch(() => ({ data: [] }))
+        jobAPI.getRecommended().catch(() => ({ data: [] })),
+        workerAPI.getProfile().catch(() => null)
       ]);
 
       const apps = appRes.data || [];
@@ -30,6 +45,7 @@ const WorkerDashboard = () => {
       });
 
       setRecommendations((recRes.data || []).slice(0, 3));
+      setProfile(profileRes?.data || null);
     } catch (err) {
       console.error('Dashboard error:', err);
     } finally {
@@ -39,10 +55,19 @@ const WorkerDashboard = () => {
 
   if (loading) return <div className="loading-container"><div className="spinner"></div><p>Loading...</p></div>;
 
+  const incomplete = isProfileIncomplete(profile);
+
   return (
     <div className="dashboard">
       <h1>Welcome, {user.name}</h1>
       <p className="dashboard-subtitle">Worker Dashboard</p>
+
+      {incomplete && (
+        <div className="profile-banner">
+          <span>Complete your profile for better matches</span>
+          <Link to="/worker/profile" className="btn btn-secondary btn-small">Complete Profile</Link>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="stats-grid">
@@ -75,21 +100,16 @@ const WorkerDashboard = () => {
         <div className="section">
           <h2>Recommended Jobs</h2>
           <div className="jobs-list">
-            {recommendations.map((rec, index) => (
-              <div key={index} className="job-card">
+            {recommendations.map((job) => (
+              <div key={job._id} className="job-card">
                 <div className="job-card-header">
-                  <h3>{rec.job.title}</h3>
-                  <span className="match-score">{rec.matchScore}% Match</span>
+                  <h3>{job.title}</h3>
+                  <MatchBadge score={job.matchScore} breakdown={job.breakdown} contributions={job.contributions} />
                 </div>
-                <p className="job-wage">&#8377;{rec.job.dailyWage}/day</p>
-                {rec.distance !== null && (
-                  <p className="job-distance">{rec.distance} km away</p>
+                <p className="job-wage">&#8377;{job.dailyWage}/day</p>
+                {typeof job.distance === 'number' && (
+                  <p className="job-distance">{job.distance} km away</p>
                 )}
-                <div className="job-reasons">
-                  {rec.reasons.map((reason, i) => (
-                    <span key={i} className="reason-tag">&#10003; {reason}</span>
-                  ))}
-                </div>
               </div>
             ))}
           </div>

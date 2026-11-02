@@ -8,6 +8,7 @@ const router = express.Router();
 const {
   createJob,
   getAllJobs,
+  getRecommendedJobs,
   getJobById,
   updateJob,
   deleteJob,
@@ -21,8 +22,12 @@ const { protect, authorize } = require('../middleware/auth');
 // Job Routes
 // ===========================
 
-// GET /api/jobs - Get all open jobs (anyone can view)
-router.get('/', getAllJobs);
+// GET /api/jobs - Get all open jobs (anyone can view, workers get match scores)
+router.get('/', protect, getAllJobs);
+
+// GET /api/jobs/recommended - Get recommended jobs for the logged-in worker (worker only)
+// This route must come before /:id to avoid conflicts
+router.get('/recommended', protect, authorize('worker'), getRecommendedJobs);
 
 // GET /api/jobs/employer/my-jobs - Get employer's own jobs
 // This route must come before /:id to avoid conflicts

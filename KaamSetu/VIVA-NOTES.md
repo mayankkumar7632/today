@@ -127,7 +127,7 @@ After a job is marked completed:
 - No real-time notifications (polling based)
 - Location is approximate (city level)
 - No file uploads yet
-- No email/SMS notifications
+- SMS provider adapter and real SMS delivery are not configured by default
 - No payment integration
 - No machine learning
 - Single server deployment
@@ -141,6 +141,51 @@ After a job is marked completed:
 - Create a mobile app with React Native
 - Add geographic heat maps for demand forecasting
 - Implement advanced analytics
+
+### 19. How does the KaamSetu chatbot work?
+The backend sends the user's message and recent conversation to the Gemini `generateContent` API. It includes trusted KaamSetu data, such as the latest open jobs from MongoDB, and instructs the assistant to answer only KaamSetu questions. If the AI request fails, the existing keyword-based chatbot returns a fallback reply.
+
+### 20. Which endpoint does the chatbot use?
+The frontend sends an authenticated `POST` request to `/api/chatbot` with a JSON message. The backend validates the message, gets a reply from the chatbot service, and returns it as JSON.
+
+### 21. Does the chatbot use an AI or paid API?
+When configured, it uses Google's Gemini API with a Google AI Studio API key. Usage limits or charges depend on the account and model. If the key is missing or the API fails, the rule-based fallback still works.
+
+### 22. How does the chatbot handle different user roles?
+The backend includes the authenticated user's name and role in the assistant instructions. It also supplies worker application counts when the user is a worker. The fallback provides role-specific replies for worker and employer features.
+
+### 23. Why is the AI API key kept on the server?
+The API key is a secret credential. Keeping it in the backend environment file prevents the browser from exposing it to users. The server file is excluded by `.gitignore`.
+
+### 24. How does the AI use database data?
+Before calling the AI, the backend queries MongoDB for up to five latest open jobs and passes their titles, daily wages, and cities as context. The assistant is told to use only the provided data and not invent job details.
+
+### 25. Why is there a rule-based fallback?
+The fallback keeps the chatbot useful if the API key is missing, the external service is unavailable, or an AI request fails. The backend logs the AI error and tries the existing keyword-based replies.
+
+### 26. What is the Web Speech API used for?
+The browser's Web Speech API converts speech to text for microphone input and can read chatbot replies aloud. The selected language (English India, Hindi, or Tamil) configures speech recognition and spoken responses. It does not require another npm package.
+
+### 27. How do email and SMS notifications work?
+The controllers call `notifyUser(userId, event, data)` after application, complaint, and job events. The service loads the user's channel preferences, formats content through the centralized templates, sends configured SMTP email, and calls the provider-independent `sendSms` adapter point. Each channel outcome is stored in the Notification collection as sent, failed, or skipped; errors are contained so notification delivery does not fail the original API request.
+
+### 28. How can notifications be demonstrated without paid services?
+Set `NOTIFY_MODE=mock` in `server/.env` and call the authenticated `GET /api/notifications/test` endpoint. Email and SMS content is printed to the backend console and each channel is logged as skipped, demonstrating the notification workflow without sending or charging for messages.
+
+### 29. When are job reminders sent?
+The `node-cron` scheduler runs daily at 6 PM server-local time. It finds jobs dated tomorrow and sends reminders to each accepted worker and once to the employer for each job with accepted applications.
+
+### 30. Why does KaamSetu use a Gmail App Password?
+A Gmail App Password lets Nodemailer sign in to Gmail without storing or using the account's normal password. It is safer because Google provides a separate 16-character password that can be revoked, and it works only for accounts with 2-Step Verification enabled.
+
+### 31. Why are notification emails sent asynchronously?
+Emails wait for an external Gmail server, so sending them synchronously could delay the job, application, or completion API response. KaamSetu starts the send promise in the background and immediately returns its normal application result.
+
+### 32. Why are email errors swallowed?
+An email delivery failure is a notification problem, not a reason to fail database actions such as posting a job or accepting a worker. `sendEmail` catches and logs delivery errors, returns false, and background callers use a catch handler so the API remains available.
+
+### 33. What does the development email test endpoint do?
+In non-production environments, an authenticated `POST /api/notifications/test-email` request sends a test message to the logged-in user's email address. The protection middleware verifies the JWT first, and the route returns whether Nodemailer succeeded.
 
 ## Data Flow Diagram
 

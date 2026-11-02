@@ -47,10 +47,13 @@ const protect = async (req, res, next) => {
     }
 
     // Check if user account is active
-    if (!req.user.isActive) {
+    const accountStatus = req.user.status || (req.user.isActive ? 'active' : 'suspended');
+    if (!req.user.isActive || accountStatus !== 'active') {
       return res.status(401).json({
         success: false,
-        message: 'Your account has been deactivated. Please contact admin.'
+        message: accountStatus === 'deleted'
+          ? 'This account has been deleted. Please contact admin.'
+          : 'Your account is suspended. Please contact admin.'
       });
     }
 

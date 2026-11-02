@@ -1,13 +1,8 @@
 /**
- * Services
- * 
- * This folder will contain business logic and helper functions.
- * Services handle complex operations like:
- * - Sending emails
- * - Processing payments
- * - Calling external APIs
- * 
- * Example: recommendationService.js will handle job recommendations
- * 
- * Phase 3: Will add recommendation and notification services
+ * Services hold reusable business logic outside route handlers.
+ *
+ * notificationService.js sends email/SMS, honors user preferences, and logs
+ * channel outcomes. templates.js centralizes message text, while
+ * reminderScheduler.js runs tomorrow-job reminders daily at 6 PM.
+ * recommendationService.js provides worker/job recommendations.
  */

@@ -1,17 +1,13 @@
-// KaamSetu - Review Routes
-
 const express = require('express');
 const router = express.Router();
-const { createReview, getUserReviews, getMyReviews } = require('../controllers/reviewController');
+const { createReview, getUserReviews, getJobReviews, reportReview, getMyReviews } = require('../controllers/reviewController');
 const { protect } = require('../middleware/auth');
 
-// Create a review
-router.post('/', protect, createReview);
-
-// Get reviews for a specific user
-router.get('/user/:userId', protect, getUserReviews);
-
-// Get reviews I gave
-router.get('/my-reviews', protect, getMyReviews);
+router.use(protect);
+router.post('/', createReview);
+router.get('/user/:userId', getUserReviews);
+router.get('/job/:jobId', getJobReviews);
+router.post('/:id/report', reportReview);
+router.get('/my-reviews', getMyReviews);
 
 module.exports = router;

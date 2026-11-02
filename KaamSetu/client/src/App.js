@@ -7,6 +7,7 @@ import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
+import ChatBot from './components/ChatBot';
 
 // Public Pages
 import Home from './pages/public/Home';
@@ -34,6 +35,7 @@ import AdminUsers from './pages/admin/AdminUsers';
 import AdminJobs from './pages/admin/AdminJobs';
 import AdminVerification from './pages/admin/AdminVerification';
 import AdminComplaints from './pages/admin/AdminComplaints';
+import AdminReviews from './pages/admin/AdminReviews';
 
 // Shared Pages
 import Notifications from './pages/Notifications';
@@ -107,6 +109,9 @@ function App() {
               <Route path="/admin/complaints" element={
                 <ProtectedRoute allowedRoles={['admin']}><AdminComplaints /></ProtectedRoute>
               } />
+              <Route path="/admin/reviews" element={
+                <ProtectedRoute allowedRoles={['admin']}><AdminReviews /></ProtectedRoute>
+              } />
 
               {/* Shared Routes */}
               <Route path="/notifications" element={
@@ -118,6 +123,7 @@ function App() {
             </Routes>
           </main>
           <Footer />
+          <ChatBot />
         </div>
       </Router>
     </AuthProvider>

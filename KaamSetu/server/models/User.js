@@ -33,6 +33,16 @@ const userSchema = new mongoose.Schema(
       trim: true
     },
 
+    // Users can opt out of either channel without disabling the other.
+    notifyEmail: {
+      type: Boolean,
+      default: true
+    },
+    notifySms: {
+      type: Boolean,
+      default: true
+    },
+
     // User's password
     password: {
       type: String,
@@ -74,6 +84,22 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true
     },
+
+    // Account moderation state. Kept separate from isActive for a clear audit-friendly lifecycle.
+    status: {
+      type: String,
+      enum: ['active', 'suspended', 'deleted'],
+      default: 'active'
+    },
+    suspendedAt: Date,
+    suspensionReason: String,
+    deletedAt: Date,
+    deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    deleteReason: String,
+
+    // Public review statistics maintained by the review service.
+    avgRating: { type: Number, default: 0, min: 0, max: 5 },
+    reviewCount: { type: Number, default: 0, min: 0 },
 
     // Whether the user's email is verified
     emailVerified: {

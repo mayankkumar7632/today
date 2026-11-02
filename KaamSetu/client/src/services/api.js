@@ -1,7 +1,15 @@
 // KaamSetu - API Service
 // This file handles all communication between frontend and backend
 
-const API_BASE = 'http://localhost:5000/api';
+const configuredApiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+export const API_ORIGIN = configuredApiUrl.replace(/\/$/, '');
+const API_BASE = `${API_ORIGIN}/api`;
+
+export const getPhotoUrl = (photoPath) => {
+  if (!photoPath) return null;
+  if (/^https?:\/\//i.test(photoPath)) return photoPath;
+  return `${API_ORIGIN}${photoPath}`;
+};
 
 // Helper function to get auth headers
 const getHeaders = () => {
@@ -17,14 +25,24 @@ const apiCall = async (endpoint, options = {}) => {
   const url = `${API_BASE}${endpoint}`;
   const config = {
     headers: getHeaders(),
-    ...options
+    ...options,
+    headers: { ...getHeaders(), ...(options.headers || {}) }
   };
 
-  const response = await fetch(url, config);
-  const data = await response.json();
+  let response;
+  let data;
+  try {
+    response = await fetch(url, config);
+    data = await response.json();
+  } catch (error) {
+    console.error(`API request failed for ${endpoint}:`, error.message);
+    throw error;
+  }
 
   if (!response.ok) {
-    throw new Error(data.message || 'Something went wrong');
+    const error = new Error(data.message || 'Something went wrong');
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -51,6 +69,42 @@ export const authAPI = {
 
   getMe: () =>
     apiCall('/auth/me')
+};
+
+// Profile photo requests use FormData instead of JSON.
+export const userAPI = {
+  uploadPhoto: async (file) => {
+    const formData = new FormData();
+    formData.append('photo', file);
+    const token = localStorage.getItem('kaamsetu_token');
+    const response = await fetch(`${API_BASE}/auth/profile-photo`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Could not upload the profile photo.');
+    }
+
+    return data;
+  },
+
+  removePhoto: async () => {
+    const token = localStorage.getItem('kaamsetu_token');
+    const response = await fetch(`${API_BASE}/auth/profile-photo`, {
+      method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Could not remove the profile photo.');
+    }
+
+    return data;
+  }
 };
 
 // ===========================
@@ -91,6 +145,7 @@ export const jobAPI = {
     const query = new URLSearchParams(params).toString();
     return apiCall(`/jobs?${query}`);
   },
+  getRecommended: () => apiCall('/jobs/recommended'),
   getById: (id) => apiCall(`/jobs/${id}`),
   getMyJobs: () => apiCall('/jobs/employer/my-jobs'),
   create: (data) =>
@@ -146,6 +201,11 @@ export const recommendationAPI = {
 // Location API
 // ===========================
 export const locationAPI = {
+  geocode: (address, city) => {
+    const params = new URLSearchParams({ address: address || '', city: city || '' }).toString();
+    return apiCall(`/location/geocode?${params}`);
+  },
+  reverse: (lat, lng) => apiCall(`/location/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`),
   findNearbyJobs: (params) => {
     const query = new URLSearchParams(params).toString();
     return apiCall(`/location/nearby-jobs?${query}`);
@@ -185,6 +245,8 @@ export const reviewAPI = {
       body: JSON.stringify(data)
     }),
   getUserReviews: (userId) => apiCall(`/reviews/user/${userId}`),
+  getJobReviews: (jobId) => apiCall(`/reviews/job/${jobId}`),
+  report: (id) => apiCall(`/reviews/${id}/report`, { method: 'POST' }),
   getMyReviews: () => apiCall('/reviews/my-reviews')
 };
 
@@ -243,8 +305,33 @@ export const adminAPI = {
     const query = new URLSearchParams(params).toString();
     return apiCall(`/admin/applications?${query}`);
   },
-  deleteReview: (id) =>
-    apiCall(`/admin/reviews/${id}`, { method: 'DELETE' })
+  getModerationReviews: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiCall(`/admin/reviews?${query}`);
+  },
+  getFlaggedUsers: () => apiCall('/admin/reviews/flagged-users'),
+  hideReview: (id, reason) => apiCall(`/admin/reviews/${id}/hide`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
+  suspendUser: (id, reason) => apiCall(`/admin/users/${id}/suspend`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
+  softDeleteUser: (id, reason) => apiCall(`/admin/users/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
+  deleteReview: (id) => apiCall(`/admin/reviews/${id}`, { method: 'DELETE' })
+};
+
+// ===========================
+// Chatbot API
+// ===========================
+export const chatbotAPI = {
+  send: (message, history = [], signal) =>
+    apiCall('/chatbot', {
+      method: 'POST',
+      body: JSON.stringify({ message, history }),
+      signal
+    }),
+  command: (text, state = {}, signal) =>
+    apiCall('/assistant/command', {
+      method: 'POST',
+      body: JSON.stringify({ text, state }),
+      signal
+    })
 };
 
 export default apiCall;
