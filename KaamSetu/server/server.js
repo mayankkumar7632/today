@@ -74,8 +74,9 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Root route - Welcome message
 app.get('/', (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.sendFile(path.join(__dirname, '../client/build/index.html'));
+  const clientIndexPath = path.join(__dirname, '../client/build/index.html');
+  if (process.env.NODE_ENV === 'production' && require('fs').existsSync(clientIndexPath)) {
+    return res.sendFile(clientIndexPath);
   }
 
   res.json({
@@ -170,10 +171,18 @@ app.use('/api/users', userRoutes);
 // In production, serve the React build from the same Render service.
 if (process.env.NODE_ENV === 'production') {
   const clientBuildPath = path.join(__dirname, '../client/build');
-  app.use(express.static(clientBuildPath));
+  if (require('fs').existsSync(path.join(clientBuildPath, 'index.html'))) {
+    app.use(express.static(clientBuildPath));
+  }
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api/')) {
       return next();
+    }
+    if (!require('fs').existsSync(path.join(clientBuildPath, 'index.html'))) {
+      return res.status(503).json({
+        status: 'Frontend build unavailable',
+        api: '/api/test'
+      });
     }
     return res.sendFile(path.join(clientBuildPath, 'index.html'));
   });
