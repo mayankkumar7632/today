@@ -95,7 +95,7 @@ export const userAPI = {
     const token = localStorage.getItem('kaamsetu_token');
     const response = await fetch(`${API_BASE}/auth/profile-photo`, {
       method: 'DELETE',
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     const data = await response.json();
 

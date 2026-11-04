@@ -74,6 +74,10 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Root route - Welcome message
 app.get('/', (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.sendFile(path.join(__dirname, '../client/build/index.html'));
+  }
+
   res.json({
     message: 'Welcome to KaamSetu API',
     version: '1.0.0',
@@ -162,6 +166,18 @@ app.use('/api/assistant', chatbotRoutes);
 
 // User routes - handles all /api/users requests
 app.use('/api/users', userRoutes);
+
+// In production, serve the React build from the same Render service.
+if (process.env.NODE_ENV === 'production') {
+  const clientBuildPath = path.join(__dirname, '../client/build');
+  app.use(express.static(clientBuildPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+    return res.sendFile(path.join(clientBuildPath, 'index.html'));
+  });
+}
 
 // ===========================
 // Error Handling Middleware
