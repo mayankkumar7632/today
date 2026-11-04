@@ -1,7 +1,9 @@
 // KaamSetu - API Service
 // This file handles all communication between frontend and backend
 
-const configuredApiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const configuredApiUrl =
+  process.env.REACT_APP_API_URL ||
+  (process.env.NODE_ENV === 'production' ? window.location.origin : 'http://localhost:5000');
 export const API_ORIGIN = configuredApiUrl.replace(/\/$/, '');
 const API_BASE = `${API_ORIGIN}/api`;
 
