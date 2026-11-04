@@ -32,13 +32,20 @@ const apiCall = async (endpoint, options = {}) => {
   };
 
   let response;
-  let data;
+  let responseText;
   try {
     response = await fetch(url, config);
-    data = await response.json();
+    responseText = await response.text();
   } catch (error) {
     console.error(`API request failed for ${endpoint}:`, error.message);
     throw error;
+  }
+
+  let data;
+  try {
+    data = responseText ? JSON.parse(responseText) : {};
+  } catch (error) {
+    throw new Error(`Server returned a non-JSON response (${response.status}).`);
   }
 
   if (!response.ok) {
